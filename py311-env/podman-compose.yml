@@ -1,0 +1,18 @@
+version: '3.8'
+services:
+  ml-env-py311:
+    image: my-colab-env-py311
+    container_name: my-colab-env-py311-container
+    volumes:
+      - ./ml-env:/content
+    network_mode: "host"
+    ports:
+      - "8888:8888"
+    devices:
+      - "nvidia.com/gpu=all"
+    security_opt:
+      - "label=disable"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    stdin_open: true
+    tty: true

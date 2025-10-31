@@ -1,0 +1,67 @@
+# Шаг 1: Используем официальный образ NVIDIA CUDA для разработки.
+FROM nvidia/cuda:12.5.1-devel-ubuntu22.04
+
+# Устанавливаем переменную, чтобы apt не задавал вопросы во время сборки
+ENV DEBIAN_FRONTEND=noninteractive
+
+# --- Подавляем предупреждение pip об установке от root ---
+ENV PIP_ROOT_USER_ACTION=ignore
+
+# Шаг 2: Настраиваем репозиторий NVIDIA и устанавливаем Python 3.11, ffmpeg и системные зависимости.
+RUN apt-get update && \
+    # Устанавливаем утилиты для добавления репозиториев
+    apt-get install -y --no-install-recommends software-properties-common wget curl ca-certificates gnupg2 git && \
+    # Добавляем ключ и репозиторий NVIDIA CUDA
+    curl -fsSLO https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb && \
+    dpkg -i cuda-keyring_1.1-1_all.deb && \
+    # Добавляем репозиторий deadsnakes для Python 3.11
+    add-apt-repository ppa:deadsnakes/ppa -y && \
+    # Снова обновляем списки пакетов
+    apt-get update && \
+    # Устанавливаем Python 3.11, ffmpeg и другие зависимости
+    apt-get install -y --no-install-recommends python3.11 python3.11-dev python3.11-venv ffmpeg && \
+    # Устанавливаем CuDNN из настроенного репозитория
+    apt-get install -y --no-install-recommends libcudnn9-cuda-12=9.2.1.18-1 && \
+    # Блокируем обновление, чтобы избежать проблем
+    apt-mark hold libcudnn9-cuda-12 && \
+    # Настраиваем Python 3.11 по умолчанию для этого образа
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
+    update-alternatives --set python3 /usr/bin/python3.11 && \
+    # Очищаем кэш apt
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# ШАГ 3: Устанавливаем и обновляем pip до последней версии ---
+RUN python3.11 -m ensurepip --upgrade && \
+    python3.11 -m pip install --upgrade pip
+
+# Добавляем переменную для TensorFlow.
+ENV TF_FORCE_GPU_ALLOW_GROWTH=true
+
+# Создаем структуру /opt/bin для соответствия Colab с правильным путем
+RUN mkdir -p /opt/bin && \
+    ln -s /usr/local/nvidia/bin/nvidia-smi /opt/bin/nvidia-smi
+
+# Создаем симлинк для Python в /usr/local/bin
+RUN ln -s /usr/bin/python3.11 /usr/local/bin/python
+
+# Шаг 4: Устанавливаем uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Делаем uv доступным для всех последующих команд
+ENV PATH="/root/.local/bin:$PATH"
+
+# Шаг 5: Копируем requirements.txt и устанавливаем все пакеты из него.
+COPY requirements.txt /tmp/requirements.txt
+RUN uv pip install --system --upgrade --no-cache -r /tmp/requirements.txt
+
+# Шаг 6: Воссоздаем структуру директорий Colab.
+RUN mkdir /content
+WORKDIR /content
+
+# Шаг 7: Открываем порт для Jupyter.
+EXPOSE 8888
+
+# Шаг 8: Задаем команду для запуска JupyterLab при старте контейнера.
+CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--NotebookApp.token=''"]
